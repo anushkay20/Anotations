@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
 # Import required libraries
 
 import cv2
 import numpy as np
 import streamlit as st
+from streamlit_drawable_canvas import st_canvas
+from PIL import Image
 import requests
 import os
 
@@ -11,84 +12,86 @@ import os
 
 def main():
 
-    st.set_page_config(layout="wide")
+    st.set_page_config(
+        layout="wide"
+    )
 
-    font_css = """
-        <style>
-        button[data-baseweb="tab"] {
-        font-size: 26px;
-        }
-        </style>
-        """
+    tabs = st.sidebar.selectbox(
+        'Choose one of the following',
+        ('Annotate Image','Resize Image'),
+        key="main_menu"
+    )
 
-    st.write(font_css, unsafe_allow_html=True)
-
-    tabs = st.tabs(('Panorama Image'))
-
-    with tabs[0]:
-        panorama()
+    # UI Options  
+    if tabs == 'Annotate Image':
+        annotateImg()
+    if tabs == 'Resize Image':
+        resizeImg()
 
 # Pre-process Image
-def preProcessImg(img):
+def preProcessImg(img, new_height=480):
     # Pre-processing image: resize image
     height, width, _ = img.shape
-    width = int(720/height*width)
-    height = 720
-    img = cv2.resize(img,(width,height))
+    width = int(new_height/height*width)
+    img = cv2.resize(img,(width,new_height))
     return img
 
 # Upload Image
-def uploadImages(key):
+def uploadImage(key, new_height=480):
 
-    uploaded_files = st.file_uploader("Choose Image files in Proper sequence",key=key,accept_multiple_files=True)
-    imgs = list()
-    for file in uploaded_files:
-        file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
+    uploaded_file = st.file_uploader("Choose a Image file",key=key)
+    if uploaded_file is not None:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
 
         # Pre-processing image: resize image
-        imgs.append(preProcessImg(img))
+        return preProcessImg(img, new_height)
     
-    if imgs:
-        return imgs
-    
-    img = cv2.cvtColor(preProcessImg(cv2.imread('sample.jpg')),cv2.COLOR_BGR2RGB)
-    size = img.shape[1] - 1
-    return [
-        img[:,:int(1/2*size),:],
-        img[:,int(1/4*size):int(3/4*size),:],
-        img[:,int(1/2*size):,:]
-    ]
-# Panorama 
+    return cv2.cvtColor(preProcessImg(cv2.imread('sample.jpg'),new_height),cv2.COLOR_BGR2RGB)
 
-def panorama():
+# About Me UI 
+def annotateImg():
+    st.header("Annotate Image")
 
-    st.header("Panorama Image")
+    img = uploadImage("annotation_img")
 
-    imgs = uploadImages(0)
+    # Specify canvas parameters in application
+    drawing_mode = st.sidebar.selectbox(
+        "Drawing tool:", ( "rect", "point", "freedraw", "line", "circle", "transform")
+    )
 
-    # Original Image
-    st.subheader("Original Images")
+    stroke_width = st.sidebar.slider("Stroke width: ", 1, 25, 3)
+    if drawing_mode == 'point':
+        point_display_radius = st.sidebar.slider("Point display radius: ", 1, 25, 3)
+    stroke_color = st.sidebar.color_picker("Stroke color hex: ", "#5FCE42")
 
-    original_imgs = st.columns(len(imgs))
-    for (original_img,img) in zip(original_imgs,imgs):
-        with original_img:
-            st.image(img,use_column_width=True)
+    realtime_update = st.sidebar.checkbox("Update in realtime", True)
 
-      
-    st.subheader("Panorama Image")
+    # Create a canvas component
+    st_canvas(
+        fill_color="rgba(0, 0, 0, 0)",  # Fixed fill color with some opacity
+        stroke_width=stroke_width,
+        stroke_color=stroke_color,
+        background_image=Image.fromarray(img),
+        update_streamlit=realtime_update,
+        height=img.shape[0],
+        width=img.shape[1],
+        drawing_mode=drawing_mode,
+        point_display_radius=point_display_radius if drawing_mode == 'point' else 0,
+        key="annotation_canvas",
+    )
 
-    stitchy = cv2.Stitcher.create()
-    ok,panorama =stitchy.stitch(imgs)
+def resizeImg():
+    st.header("Resize Image")
 
-    if ok != cv2.STITCHER_OK:
-    # checking if the stitching procedure is successful
-    # .stitch() function returns a true value if stitching is
-    # done successfully
-        st.warning("Panorama is not possible for given images in given sequence!!!")
-    else:
-        st.image(panorama,use_column_width=True)
+    img = uploadImage("resize_img")
+
+    scaleFactor = st.slider("Times Image",1,10,1,1,key='resize')/5
+    scaledImg = cv2.resize(img, None, fx=scaleFactor, fy = scaleFactor, interpolation = cv2.INTER_LINEAR)
+
+    st.image(scaledImg)
+    pass
 
 if __name__ == "__main__":
     main()
